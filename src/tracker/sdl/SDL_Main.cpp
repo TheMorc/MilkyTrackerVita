@@ -67,6 +67,8 @@
 #include <limits.h>
 #include <errno.h>
 
+#define PATH_MAX 4096
+
 #include <SDL.h>
 #include "SDL_KeyTranslation.h"
 // ---------------------------- Tracker includes ----------------------------
@@ -635,18 +637,18 @@ void processSDLEvents(const SDL_Event& event)
 
 	switch (event.type)
 	{
-		case SDL_MOUSEBUTTONDOWN:
-			mouseButton = event.button.button;
-			translateMouseDownEvent(mouseButton, event.button.x, event.button.y);
+		case SDL_FINGERUP:
+			mouseButton = 1;
+			translateMouseUpEvent(mouseButton, event.tfinger.x*960, event.tfinger.y*544);
 			break;
 
-		case SDL_MOUSEBUTTONUP:
-			mouseButton = event.button.button;
-			translateMouseUpEvent(mouseButton, event.button.x, event.button.y);
+		case SDL_FINGERDOWN:
+			mouseButton = 1;
+			translateMouseDownEvent(mouseButton, event.tfinger.x*960, event.tfinger.y*544);
 			break;
 
-		case SDL_MOUSEMOTION:
-			translateMouseMoveEvent(event.motion.state, event.motion.x, event.motion.y);
+		case SDL_FINGERMOTION:
+			translateMouseMoveEvent(1, event.tfinger.x*960, event.tfinger.y*544);
 			break;
 
 		case SDL_MOUSEWHEEL:
@@ -826,7 +828,7 @@ myDisplayDevice = new PPDisplayDeviceFB(windowSize.width, windowSize.height, sca
 
 	// Kickstart SDL event loop early so that the splash screen is made visible
 	SDL_PumpEvents();
-
+	
 	// Startup procedure
 	myTracker->startUp(noSplash);
 
@@ -836,9 +838,6 @@ myDisplayDevice = new PPDisplayDeviceFB(windowSize.width, windowSize.height, sca
 
 	// Try to create timer
 	timer = SDL_AddTimer(20, timerCallback, NULL);
-
-	// Start capturing text input events
-	SDL_StartTextInput();
 
 	ticking = true;
 }
@@ -988,6 +987,10 @@ unrecognizedCommandLineSwitch:
 			RaiseEventSerialized(&event);
 		}
 	}
+
+	pp_uint16 chr[3] = {VK_RETURN, 0, 0};
+	PPEvent event2(eKeyDown, &chr, sizeof(chr));
+	RaiseEventSerialized(&event2);
 
 	// Main event loop
 	done = 0;

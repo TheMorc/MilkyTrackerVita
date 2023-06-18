@@ -19,12 +19,21 @@
 #  along with MilkyTracker.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-cmake_minimum_required(VERSION 3.10)
-project(MilkyTracker)
+cmake_minimum_required(VERSION 3.2)
 
-# Set C++ standard to C++98
-set(CMAKE_CXX_STANDARD 98)
-set(CMAKE_CXX_EXTENSIONS OFF)
+if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
+  if(DEFINED ENV{VITASDK})
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{VITASDK}/share/vita.toolchain.cmake" CACHE PATH "toolchain file")
+  else()
+    message(FATAL_ERROR "Please define VITASDK to point to your SDK path!")
+  endif()
+endif()
+
+include("/usr/local/vitasdk/share/vita.cmake" REQUIRED)
+
+cmake_minimum_required(VERSION 3.10)
+project(Tracker)
+
 
 # Enable IDE solution folders
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
@@ -36,12 +45,12 @@ add_definitions(-DMILKYTRACKER)
 include(GNUInstallDirs)
 
 # Force SDL if requested
-option(FORCESDL "Force SDL instead of native" OFF)
-if(FORCESDL)
+option(FORCESDL "Force SDL instead of native" ON)
     unset(APPLE)
     unset(WIN32)
     add_definitions(-D__FORCE_SDL_AUDIO__)
-endif()
+add_definitions(-mno-unaligned-access)
+add_definitions(-fno-short-enums)
 
 # Lowercase project name for binaries and packaging
 string(TOLOWER ${PROJECT_NAME} PROJECT_NAME_LOWER)
@@ -62,159 +71,28 @@ configure_file(
     ${PROJECT_BINARY_DIR}/src/tracker/version.h
 )
 
-# Packaging
-if(APPLE)
-    set(CPACK_GENERATOR DragNDrop)
-    set(CPACK_DMG_VOLUME_NAME "${PROJECT_NAME} ${VER_FULL}")
-    set(
-        CPACK_DMG_DS_STORE_SETUP_SCRIPT
-        ${PROJECT_SOURCE_DIR}/resources/packaging/osx/DMGSetup.scpt
-    )
-    set(
-        CPACK_DMG_BACKGROUND_IMAGE
-        ${PROJECT_SOURCE_DIR}/resources/packaging/osx/DMGBackground.tif
-    )
-elseif(WIN32)
-    set(CPACK_GENERATOR ZIP)
-else()
-    set(CPACK_GENERATOR TGZ)
-endif()
-set(CPACK_PACKAGE_NAME ${PROJECT_NAME_LOWER})
-set(CPACK_PACKAGE_VENDOR "MilkyTracker Team")
-set(CPACK_PACKAGE_CONTACT "support@milkytracker.org")
-set(CPACK_PACKAGE_VERSION_MAJOR ${VER_X})
-set(CPACK_PACKAGE_VERSION_MINOR ${VER_YY})
-set(CPACK_PACKAGE_VERSION_PATCH ${VER_ZZ})
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "FastTracker II compatible music tracker")
-include(CPack)
 
-if(APPLE)
-    # Warn if deployment target isn't set to Lion
-    if(NOT CMAKE_OSX_DEPLOYMENT_TARGET MATCHES "10.7")
-        message(WARNING
-            "Your deployment target is either unset or not set to \"10.7\", "
-            "which means that the binaries produced may not run on earlier "
-            "versions of macOS.\n"
-            "Please re-run CMake with '-DCMAKE_OSX_DEPLOYMENT_TARGET=10.7' "
-            "or change the variable in the CMake GUI to target Lion and newer."
-        )
-    endif()
-
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
-
-    # Set variables for generating the Info.plist file
-    set(MACOSX_BUNDLE_BUNDLE_VERSION "${VER_FULL}")
-    set(MACOSX_BUNDLE_EXECUTABLE ${PROJECT_NAME})
-    set(MACOSX_BUNDLE_GUI_IDENTIFIER "com.Titan.MilkyTracker")
-    set(MACOSX_BUNDLE_NSMAIN_NIB_FILE "Application")
-    set(MACOSX_BUNDLE_ICON_FILE "carton")
-    set(MACOSX_BUNDLE_NAME ${PROJECT_NAME})
-    set(MACOSX_BUNDLE_SHORT_VERSION_STRING "${VER_FULL}")
-
-    # Carbon only required for HIToolbox/Events.h (virtual keycodes)
-    find_library(CARBON_LIBRARY Carbon)
-    find_library(COCOA_LIBRARY Cocoa)
-    find_library(CORE_AUDIO_LIBRARY CoreAudio)
-    find_library(CORE_FOUNDATION_LIBRARY CoreFoundation)
-    find_library(CORE_MIDI_LIBRARY CoreMIDI)
-    find_library(CORE_VIDEO_LIBRARY CoreVideo)
-    find_library(OPENGL_LIBRARY OpenGL)
-
-    # OS X MIDI support requires no external libraries
-    message(STATUS "Enabled MIDI support (Core MIDI)")
-    add_subdirectory(src/midi)
-elseif(WIN32)
-    # Visual C++ Compiler options
-    if(MSVC)
-        # Warn if platform toolset may not be targetting Windows XP upwards
-        if(NOT CMAKE_VS_PLATFORM_TOOLSET MATCHES "xp")
-            message(WARNING
-                "Your currently-selected platform toolset may generate "
-                "executables which are incompatible with Windows XP.\n"
-                "Please set your toolset to be one of v110_xp, v120_xp or "
-                "v140_xp for VS2012, VS2013, and VS2015 respectively.\n"
-                "You can do so with the '-T' argument to CMake, or by entering "
-                "it in the CMake GUI."
-            )
-        endif()
-
-        # Suppress secure string function warnings
-        add_definitions(-D_CRT_SECURE_NO_WARNINGS)
-
-        # Enable parallel compilation
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /MP")
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP")
-
-        # Enable static linkage of the Microsoft Visual C/C++ Runtime
-        set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} /MTd")
-        set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} /MT")
-        set(CMAKE_C_FLAGS_RELWITHDEBINFO "${CMAKE_C_FLAGS_RELWITHDEBINFO} /MTd")
-        set(CMAKE_C_FLAGS_MINSIZEREL "${CMAKE_C_FLAGS_MINSIZEREL} /MT")
-        set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /MTd")
-        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MT")
-        set(
-            CMAKE_CXX_FLAGS_RELWITHDEBINFO
-            "${CMAKE_CXX_FLAGS_RELWITHDEBINFO} /MTd"
-        )
-        set(CMAKE_CXX_FLAGS_MINSIZEREL "${CMAKE_CXX_FLAGS_MINSIZEREL} /MT")
-    endif()
-
-    # Prevent Windows.h from clashing with the Standard Template Library so we
-    # can use std::min/std::max (see https://support.microsoft.com/kb/143208)
-    add_definitions(-DNOMINMAX)
-
-    # Windows MIDI support requires no external libraries
-    message(STATUS "Enabled MIDI support (WinMM)")
-    add_subdirectory(src/midi)
-else()
     # Workaround for SDL bug #3295, which occurs in SDL2 <2.0.5
     # https://bugzilla.libsdl.org/show_bug.cgi?id=3295
     cmake_policy(SET CMP0004 OLD)
 
     find_package(SDL2 REQUIRED)
-endif()
 
-# Prefer static linkage under OS X for libraries located with find_package()
-if(APPLE)
+
     set(SUFFIXES_ORIG ${CMAKE_FIND_LIBRARY_SUFFIXES})
     set(CMAKE_FIND_LIBRARY_SUFFIXES .a ${CMAKE_FIND_LIBRARY_SUFFIXES})
-endif()
 
-# Under macOS and Windows we use Git Submodules to locate the decompression libs
-if(UNIX)
-    # zlib is provided by Linux and macOS
-    find_package(ZLIB)
+find_package(SDL2 REQUIRED)
 
-    # We can't use Brew for these due to OSX target version mismatch
-    # (we're targeting an older version of OSX to increase compatibility)
-    if(NOT APPLE)
-      find_package(LHASA)
-      find_package(ZZIPLIB)
-    endif()
 
-    if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-        find_package(ALSA)
-        find_package(JACK)
+link_directories(
+  ${CMAKE_CURRENT_BINARY_DIR}
+  $ENV{VITASDK}/arm-vita-eabi/lib
+)
+include_directories(
+# Include the CMake-generated version header from the build directory
+../common)
 
-        # Linux MIDI support requires ALSA and RtMidi
-        if(ALSA_FOUND)
-            find_package(RTMIDI 2.1.0)
-            if(RTMIDI_FOUND)
-                message(STATUS "Enabled MIDI support (ALSA/RtMidi)")
-                add_subdirectory(src/midi)
-            else()
-                message("MIDI support disabled (RtMidi unavailable)")
-            endif()
-        else()
-            message("MIDI support disabled (ALSA unavailable)")
-        endif()
-    endif()
-endif()
-
-# Restore library suffixes
-if(APPLE)
-    set(CMAKE_FIND_LIBRARY_SUFFIXES ${SUFFIXES_ORIG})
-endif()
 
 add_subdirectory(docs)
 add_subdirectory(resources/music)
@@ -224,5 +102,8 @@ add_subdirectory(src/milkyplay)
 add_subdirectory(src/ppui)
 add_subdirectory(src/tracker)
 
-# Set MilkyTracker target as startup project in Visual Studio
-set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT tracker)
+
+
+set(VITA_APP_NAME "MilkyTracker")
+set(VITA_TITLEID  "MILKTRACK")
+set(VITA_VERSION  "01.00")
